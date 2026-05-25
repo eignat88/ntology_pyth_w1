@@ -104,7 +104,15 @@ class OrderAnalyzer:
         """
 
         df = df.copy()
+
+        if df[self.amount_column].isna().any():
+            raise ValueError(f"Колонка {self.amount_column} содержит пустые значения")
+
         df[self.amount_column] = pd.to_numeric(df[self.amount_column], errors="raise")
+
+        if df[self.amount_column].isna().any():
+            raise ValueError(f"Колонка {self.amount_column} содержит некорректные значения")
+
         return df
 
     def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
