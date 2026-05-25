@@ -114,29 +114,37 @@ class OrderAnalyzer:
 
         return df
 
-    def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
+    def _normalize_status(self, status: pd.Series) -> pd.Series:
         """
-        Оставляет только доставленные заказы.
+        Приводит значения статуса к единому виду для сравнения.
         """
 
-        return df[df[self.status_column] == self.delivered_status]
+        return status.astype("string").str.strip().str.lower()
+
+    def _normalize_delivered_status(self) -> str:
+        """
+        Возвращает нормализованное значение статуса delivered из конфигурации.
+        """
+
+        return str(self.delivered_status).strip().lower()
+
+    def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Оставляет только доставленные заказы с единым правилом нормализации.
+        """
+
+        status_norm = self._normalize_status(df[self.status_column])
+        delivered_mask = status_norm.eq(self._normalize_delivered_status())
+
+        return df[delivered_mask]
 
     def calculate_metrics(self, df: pd.DataFrame) -> dict:
         """
         Рассчитывает метрики по доставленным заказам.
         """
         df = self.prepare_amount_column(df)
+        delivered_df = self.filter_delivered_orders(df)
 
-        status_raw = df[self.status_column]
-        status_norm = status_raw.astype("string").str.strip().str.lower()
-        delivered_mask = status_norm.eq(self.delivered_status.lower())
-        delivered_df = df[delivered_mask]
-
-        self.logger.debug("status value_counts: %s", status_norm.value_counts(dropna=False).to_dict())
-        self.logger.debug(
-            "amount sum by status: %s",
-            df.groupby(status_norm, dropna=False)[self.amount_column].sum().to_dict(),
-        )
 
         orders_count = int(len(delivered_df))
         total_revenue = (
