@@ -117,10 +117,17 @@ class OrderAnalyzer:
 
     def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Оставляет только доставленные заказы.
+        Оставляет только доставленные заказы с нормализацией статусов.
         """
 
-        return df[df[self.status_column] == self.delivered_status]
+        status_norm = df[self.status_column].astype("string").str.strip().str.lower()
+        delivered_status_norm = self._normalize_status(self.delivered_status)
+
+        return df[status_norm.eq(delivered_status_norm)]
+
+    @staticmethod
+    def _normalize_status(status: str) -> str:
+        return str(status).strip().lower()
 
     def calculate_metrics(self, df: pd.DataFrame) -> dict:
         """
@@ -139,14 +146,11 @@ class OrderAnalyzer:
 
         df[self.amount_column] = amount
 
-        status_raw = df[self.status_column]
-        status_norm = status_raw.astype("string").str.strip().str.lower()
+        status_norm = df[self.status_column].astype("string").str.strip().str.lower()
         status_norm = status_norm.replace("", pd.NA)
-
-        delivered_mask = status_norm.eq("delivered")
-        delivered_df = df[delivered_mask]
-
         empty_status_count = int(status_norm.isna().sum())
+
+        delivered_df = self.filter_delivered_orders(df)
 
         self.logger.debug("status value_counts: %s", status_norm.value_counts(dropna=False).to_dict())
         self.logger.debug(
