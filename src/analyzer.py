@@ -124,21 +124,42 @@ class OrderAnalyzer:
 
     def calculate_metrics(self, df: pd.DataFrame) -> dict:
         """
-        Рассчитывает метрики по доставленным заказам.
+        Рассчитывает метрики с нормализацией статусов и суммы.
         """
+        df = df.copy()
 
-        orders_count = len(df)
-        total_revenue = df[self.amount_column].sum()
+        amount = pd.to_numeric(df[self.amount_column], errors="coerce")
+        invalid_amount_mask = amount.isna()
 
-        if orders_count > 0:
-            average_check = df[self.amount_column].mean()
-        else:
-            average_check = 0
+        if invalid_amount_mask.any():
+            invalid_rows = df.index[invalid_amount_mask].tolist()
+            raise ValueError(
+                f"Колонка {self.amount_column} содержит нечисловые значения в строках: {invalid_rows}"
+            )
+
+        df[self.amount_column] = amount
+
+        status_raw = df[self.status_column]
+        status_norm = status_raw.astype("string").str.strip().str.lower()
+        status_norm = status_norm.replace("", pd.NA)
+
+        delivered_mask = status_norm.eq("delivered")
+        delivered_df = df[delivered_mask]
+
+        empty_status_count = int(status_norm.isna().sum())
+
+        self.logger.debug("status value_counts: %s", status_norm.value_counts(dropna=False).to_dict())
+        self.logger.debug(
+            "amount sum by status: %s",
+            df.groupby(status_norm, dropna=False)[self.amount_column].sum().to_dict(),
+        )
 
         return {
-            "total_revenue": round(total_revenue, 2),
-            "average_check": round(average_check, 2),
-            "orders_count": orders_count,
+            "total_orders": int(len(df)),
+            "delivered_orders": int(len(delivered_df)),
+            "total_amount": float(delivered_df[self.amount_column].sum(min_count=1)) if len(delivered_df) > 0 else 0.0,
+            "empty_status_orders": empty_status_count,
+            "invalid_amount_orders": int(invalid_amount_mask.sum()),
         }
 
     def process_file(self, file_path: Path) -> dict | None:
@@ -156,10 +177,7 @@ class OrderAnalyzer:
                 raise ValueError("Файл пустой")
 
             self.validate_columns(df, file_path)
-            df = self.prepare_amount_column(df)
-
-            delivered_orders = self.filter_delivered_orders(df)
-            metrics = self.calculate_metrics(delivered_orders)
+            metrics = self.calculate_metrics(df)
 
             return {
                 "file_name": file_path.name,
