@@ -124,7 +124,7 @@ class OrderAnalyzer:
 
     def calculate_metrics(self, df: pd.DataFrame) -> dict:
         """
-        Рассчитывает метрики с нормализацией статусов и суммы.
+        Рассчитывает метрики по доставленным заказам.
         """
         df = df.copy()
 
@@ -141,12 +141,8 @@ class OrderAnalyzer:
 
         status_raw = df[self.status_column]
         status_norm = status_raw.astype("string").str.strip().str.lower()
-        status_norm = status_norm.replace("", pd.NA)
-
-        delivered_mask = status_norm.eq("delivered")
+        delivered_mask = status_norm.eq(self.delivered_status.lower())
         delivered_df = df[delivered_mask]
-
-        empty_status_count = int(status_norm.isna().sum())
 
         self.logger.debug("status value_counts: %s", status_norm.value_counts(dropna=False).to_dict())
         self.logger.debug(
@@ -154,12 +150,22 @@ class OrderAnalyzer:
             df.groupby(status_norm, dropna=False)[self.amount_column].sum().to_dict(),
         )
 
+        orders_count = int(len(delivered_df))
+        total_revenue = (
+            float(delivered_df[self.amount_column].sum(min_count=1))
+            if orders_count > 0
+            else 0.0
+        )
+        average_check = (
+            float(delivered_df[self.amount_column].mean())
+            if orders_count > 0
+            else 0.0
+        )
+
         return {
-            "total_orders": int(len(df)),
-            "delivered_orders": int(len(delivered_df)),
-            "total_amount": float(delivered_df[self.amount_column].sum(min_count=1)) if len(delivered_df) > 0 else 0.0,
-            "empty_status_orders": empty_status_count,
-            "invalid_amount_orders": int(invalid_amount_mask.sum()),
+            "total_revenue": total_revenue,
+            "average_check": average_check,
+            "orders_count": orders_count,
         }
 
     def process_file(self, file_path: Path) -> dict | None:
