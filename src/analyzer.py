@@ -98,9 +98,8 @@ class OrderAnalyzer:
         """
         Преобразует колонку total_amount в числовой тип.
 
-        Если в колонке есть нечисловые значения, будет ошибка.
-        Это нужно, чтобы испорченный файл не ломал весь процесс,
-        а корректно пропускался с записью в лог.
+        Строгий режим: любое невалидное значение (пустое или нечисловое)
+        считается ошибкой файла.
         """
 
         df = df.copy()
@@ -126,18 +125,7 @@ class OrderAnalyzer:
         """
         Рассчитывает метрики по доставленным заказам.
         """
-        df = df.copy()
-
-        amount = pd.to_numeric(df[self.amount_column], errors="coerce")
-        invalid_amount_mask = amount.isna()
-
-        if invalid_amount_mask.any():
-            invalid_rows = df.index[invalid_amount_mask].tolist()
-            raise ValueError(
-                f"Колонка {self.amount_column} содержит нечисловые значения в строках: {invalid_rows}"
-            )
-
-        df[self.amount_column] = amount
+        df = self.prepare_amount_column(df)
 
         status_raw = df[self.status_column]
         status_norm = status_raw.astype("string").str.strip().str.lower()
@@ -183,6 +171,7 @@ class OrderAnalyzer:
                 raise ValueError("Файл пустой")
 
             self.validate_columns(df, file_path)
+            df = self.prepare_amount_column(df)
             metrics = self.calculate_metrics(df)
 
             return {
