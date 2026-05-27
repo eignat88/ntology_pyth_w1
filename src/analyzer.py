@@ -1,5 +1,6 @@
 import logging
 import re
+from collections import Counter
 from decimal import Decimal
 from pathlib import Path
 
@@ -284,6 +285,94 @@ class OrderAnalyzer:
             "total_revenue": total_revenue,
             "average_check": average_check,
             "orders_count": orders_count,
+        }
+
+    def validate_rows(self, df: pd.DataFrame, fail_fast: bool = True) -> dict:
+        """
+        Валидирует строки и собирает детализированные ошибки.
+
+        Ошибка по строке содержит:
+        - row_number
+        - field
+        - error_code
+        - raw_value
+        - message
+
+        Статус делится на:
+        - critical: строка отбрасывается;
+        - warning: строка остаётся, но помечается.
+        """
+
+        valid_rows: list[dict] = []
+        critical_errors: list[dict] = []
+        warnings: list[dict] = []
+        error_code_counter: Counter = Counter()
+
+        for index, row in df.iterrows():
+            row_number = int(index) + 2
+            row_has_critical_error = False
+            normalized_status = None
+            normalized_amount = None
+
+            try:
+                normalized_amount = self.validate_total_amount(
+                    raw_value=row[self.amount_column],
+                    row_number=row_number,
+                )
+            except AmountValidationError as error:
+                error_item = {
+                    "row_number": error.row_number,
+                    "field": self.amount_column,
+                    "error_code": error.code,
+                    "raw_value": error.raw_value,
+                    "message": str(error),
+                }
+                critical_errors.append(error_item)
+                error_code_counter[error.code] += 1
+                row_has_critical_error = True
+                if fail_fast:
+                    break
+
+            try:
+                normalized_status = self.validate_status(
+                    raw_status=row[self.status_column],
+                    row_number=row_number,
+                )
+            except StatusValidationError as error:
+                error_item = {
+                    "row_number": error.row_number,
+                    "field": self.status_column,
+                    "error_code": error.code,
+                    "raw_value": error.raw_value,
+                    "message": str(error),
+                }
+                if error.code == "ERR_STATUS_NOT_ALLOWED":
+                    warnings.append(error_item)
+                else:
+                    critical_errors.append(error_item)
+                    row_has_critical_error = True
+
+                error_code_counter[error.code] += 1
+                if fail_fast and row_has_critical_error:
+                    break
+
+            if not row_has_critical_error:
+                valid_row = row.to_dict()
+                if normalized_status is not None:
+                    valid_row[self.status_column] = normalized_status
+                if normalized_amount is not None:
+                    valid_row[self.amount_column] = normalized_amount
+                valid_rows.append(valid_row)
+
+        invalid_rows = {error["row_number"] for error in critical_errors}
+
+        return {
+            "valid_rows_count": len(valid_rows),
+            "invalid_rows_count": len(invalid_rows),
+            "critical_errors": critical_errors,
+            "warnings": warnings,
+            "error_code_stats": dict(error_code_counter),
+            "valid_rows": valid_rows,
         }
 
     def process_file(self, file_path: Path) -> dict | None:
