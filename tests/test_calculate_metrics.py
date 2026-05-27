@@ -42,20 +42,18 @@ class CalculateMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["total_revenue"], 25.5)
         self.assertEqual(metrics["average_check"], 12.75)
 
-    def test_calculate_metrics_rejects_non_delivered_status_as_business_error(self):
+    def test_calculate_metrics_allows_mixed_valid_statuses_and_counts_only_delivered(self):
         df = pd.DataFrame(
             {
-                "status": ["delivered", "pending"],
-                "amount": ["100", "50"],
+                "status": ["delivered", "pending", "Returned", "shipped"],
+                "amount": ["100", "50", "70", "20"],
             }
         )
 
-        with self.assertRaises(StatusValidationError) as error:
-            self.analyzer.calculate_metrics(df)
-
-        self.assertEqual(error.exception.code, "ERR_STATUS_NOT_ALLOWED")
-        self.assertEqual(error.exception.raw_value, "pending")
-        self.assertEqual(error.exception.row_number, 3)
+        metrics = self.analyzer.calculate_metrics(df)
+        self.assertEqual(metrics["orders_count"], 1)
+        self.assertEqual(metrics["total_revenue"], 100.0)
+        self.assertEqual(metrics["average_check"], 100.0)
 
     def test_calculate_metrics_rejects_empty_status(self):
         df = pd.DataFrame(
@@ -70,6 +68,21 @@ class CalculateMetricsTests(unittest.TestCase):
 
         self.assertEqual(error.exception.code, "ERR_STATUS_EMPTY")
         self.assertEqual(error.exception.raw_value, "   ")
+        self.assertEqual(error.exception.row_number, 3)
+
+    def test_calculate_metrics_rejects_truly_not_allowed_status(self):
+        df = pd.DataFrame(
+            {
+                "status": ["delivered", "in_transit_custom"],
+                "amount": ["100", "50"],
+            }
+        )
+
+        with self.assertRaises(StatusValidationError) as error:
+            self.analyzer.calculate_metrics(df)
+
+        self.assertEqual(error.exception.code, "ERR_STATUS_NOT_ALLOWED")
+        self.assertEqual(error.exception.raw_value, "in_transit_custom")
         self.assertEqual(error.exception.row_number, 3)
 
     def test_calculate_metrics_raises_for_dirty_amounts(self):
@@ -117,7 +130,7 @@ class CalculateMetricsTests(unittest.TestCase):
     def test_validate_rows_collects_detailed_errors_and_stats(self):
         df = pd.DataFrame(
             {
-                "status": ["delivered", "pending", " ", "delivered"],
+                "status": ["delivered", "unknown_status", " ", "delivered"],
                 "amount": ["10", "20", "oops", "0"],
             }
         )
@@ -142,7 +155,7 @@ class CalculateMetricsTests(unittest.TestCase):
     def test_validate_rows_fail_fast_stops_on_first_critical_error(self):
         df = pd.DataFrame(
             {
-                "status": ["pending", "delivered", "delivered"],
+                "status": ["unknown_status", "delivered", "delivered"],
                 "amount": ["10", "oops", "99"],
             }
         )
