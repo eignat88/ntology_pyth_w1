@@ -114,6 +114,47 @@ class CalculateMetricsTests(unittest.TestCase):
             self.analyzer.validate_total_amount(raw_value="12.345", row_number=2)
         self.assertEqual(error.exception.code, "ERR_AMOUNT_SCALE_EXCEEDED")
 
+    def test_validate_rows_collects_detailed_errors_and_stats(self):
+        df = pd.DataFrame(
+            {
+                "status": ["delivered", "pending", " ", "delivered"],
+                "amount": ["10", "20", "oops", "0"],
+            }
+        )
+
+        result = self.analyzer.validate_rows(df, fail_fast=False)
+
+        self.assertEqual(result["valid_rows_count"], 2)
+        self.assertEqual(result["invalid_rows_count"], 2)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertEqual(result["warnings"][0]["row_number"], 3)
+        self.assertEqual(result["warnings"][0]["field"], "status")
+        self.assertEqual(result["warnings"][0]["error_code"], "ERR_STATUS_NOT_ALLOWED")
+        self.assertEqual(result["critical_errors"][0]["row_number"], 4)
+        self.assertEqual(result["critical_errors"][0]["field"], "amount")
+        self.assertEqual(
+            result["critical_errors"][0]["error_code"], "ERR_AMOUNT_FORMAT"
+        )
+        self.assertEqual(result["error_code_stats"]["ERR_STATUS_NOT_ALLOWED"], 1)
+        self.assertEqual(result["error_code_stats"]["ERR_AMOUNT_FORMAT"], 1)
+        self.assertEqual(result["error_code_stats"]["ERR_AMOUNT_NON_POSITIVE"], 1)
+
+    def test_validate_rows_fail_fast_stops_on_first_critical_error(self):
+        df = pd.DataFrame(
+            {
+                "status": ["pending", "delivered", "delivered"],
+                "amount": ["10", "oops", "99"],
+            }
+        )
+
+        result = self.analyzer.validate_rows(df, fail_fast=True)
+
+        self.assertEqual(result["valid_rows_count"], 1)
+        self.assertEqual(result["invalid_rows_count"], 1)
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertEqual(result["critical_errors"][0]["row_number"], 3)
+        self.assertEqual(result["critical_errors"][0]["error_code"], "ERR_AMOUNT_FORMAT")
+
 
 if __name__ == "__main__":
     unittest.main()
