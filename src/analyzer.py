@@ -390,8 +390,34 @@ class OrderAnalyzer:
                 raise ValueError("Файл пустой")
 
             self.validate_columns(df, file_path)
-            df = self.prepare_amount_column(df)
-            metrics = self.calculate_metrics(df)
+
+            validation_result = self.validate_rows(df, fail_fast=False)
+            for error in validation_result["critical_errors"]:
+                self.logger.error(
+                    "Ошибка в файле %s: row=%s field=%s code=%s raw_value=%r message=%s",
+                    file_path.name,
+                    error["row_number"],
+                    error["field"],
+                    error["error_code"],
+                    error["raw_value"],
+                    error["message"],
+                )
+            for warning in validation_result["warnings"]:
+                self.logger.error(
+                    "Ошибка в файле %s: row=%s field=%s code=%s raw_value=%r message=%s",
+                    file_path.name,
+                    warning["row_number"],
+                    warning["field"],
+                    warning["error_code"],
+                    warning["raw_value"],
+                    warning["message"],
+                )
+
+            if validation_result["critical_errors"]:
+                return None
+
+            valid_df = pd.DataFrame(validation_result["valid_rows"])
+            metrics = self.calculate_metrics(valid_df)
 
             return {
                 "file_name": file_path.name,

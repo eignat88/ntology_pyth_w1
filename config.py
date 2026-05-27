@@ -26,5 +26,4 @@ REQUIRED_COLUMNS = [
     "currency",
     "payment_method",
     "shipping_method",
-    "notes",
 ]
