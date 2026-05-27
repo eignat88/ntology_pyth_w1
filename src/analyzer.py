@@ -17,6 +17,18 @@ class AmountValidationError(ValueError):
         )
 
 
+class StatusValidationError(ValueError):
+    """Ошибка валидации статуса заказа с кодом и контекстом строки."""
+
+    def __init__(self, code: str, raw_value: object, row_number: int):
+        self.code = code
+        self.raw_value = raw_value
+        self.row_number = row_number
+        super().__init__(
+            f"{code}: invalid status at row {row_number}, raw_value={raw_value!r}"
+        )
+
+
 class OrderAnalyzer:
     """
     Класс для пакетного анализа CSV-файлов с заказами интернет-магазина.
@@ -152,12 +164,61 @@ class OrderAnalyzer:
 
         return float(normalized_value)
 
+    def normalize_status(self, raw_status: object) -> str:
+        """Нормализует статус: trim + lower."""
+
+        raw_as_string = "" if raw_status is None else str(raw_status)
+        return raw_as_string.strip().lower()
+
+    def validate_status(self, raw_status: object, row_number: int) -> str:
+        """
+        Валидирует статус по бизнес-правилам.
+
+        Для текущего сценария разрешён только delivered.
+        Пустой статус: ERR_STATUS_EMPTY.
+        Любой другой статус: ERR_STATUS_NOT_ALLOWED.
+        """
+
+        normalized_status = self.normalize_status(raw_status)
+
+        if normalized_status == "":
+            raise StatusValidationError(
+                code="ERR_STATUS_EMPTY",
+                raw_value=raw_status,
+                row_number=row_number,
+            )
+
+        allowed_statuses = {self.delivered_status.lower(), "pending", "cancelled", "returned"}
+
+        if normalized_status not in allowed_statuses:
+            raise StatusValidationError(
+                code="ERR_STATUS_NOT_ALLOWED",
+                raw_value=raw_status,
+                row_number=row_number,
+            )
+
+        if normalized_status != self.delivered_status.lower():
+            raise StatusValidationError(
+                code="ERR_STATUS_NOT_ALLOWED",
+                raw_value=raw_status,
+                row_number=row_number,
+            )
+
+        return normalized_status
+
     def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         Оставляет только доставленные заказы.
         """
 
-        return df[df[self.status_column] == self.delivered_status]
+        status_norm = [
+            self.validate_status(raw_status=value, row_number=index + 2)
+            for index, value in enumerate(df[self.status_column].tolist())
+        ]
+
+        delivered_mask = pd.Series(status_norm, index=df.index).eq(self.delivered_status.lower())
+
+        return df[delivered_mask]
 
     def calculate_metrics(self, df: pd.DataFrame) -> dict:
         """
@@ -165,15 +226,17 @@ class OrderAnalyzer:
         """
         df = self.prepare_amount_column(df)
 
-        status_raw = df[self.status_column]
-        status_norm = status_raw.astype("string").str.strip().str.lower()
-        delivered_mask = status_norm.eq(self.delivered_status.lower())
-        delivered_df = df[delivered_mask]
+        status_norm = [
+            self.validate_status(raw_status=value, row_number=index + 2)
+            for index, value in enumerate(df[self.status_column].tolist())
+        ]
+        status_norm_series = pd.Series(status_norm, index=df.index)
+        delivered_df = df[status_norm_series.eq(self.delivered_status.lower())]
 
-        self.logger.debug("status value_counts: %s", status_norm.value_counts(dropna=False).to_dict())
+        self.logger.debug("status value_counts: %s", status_norm_series.value_counts(dropna=False).to_dict())
         self.logger.debug(
             "amount sum by status: %s",
-            df.groupby(status_norm, dropna=False)[self.amount_column].sum().to_dict(),
+            df.groupby(status_norm_series, dropna=False)[self.amount_column].sum().to_dict(),
         )
 
         orders_count = int(len(delivered_df))
