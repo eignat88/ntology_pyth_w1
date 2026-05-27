@@ -204,9 +204,10 @@ class OrderAnalyzer:
         """
         Валидирует статус по бизнес-правилам.
 
-        Для текущего сценария разрешён только delivered.
-        Пустой статус: ERR_STATUS_EMPTY.
-        Любой другой статус: ERR_STATUS_NOT_ALLOWED.
+        Пустой статус (None/пустая строка/пробелы): ERR_STATUS_EMPTY.
+        Статус, не входящий в допустимый набор: ERR_STATUS_NOT_ALLOWED.
+        Допустимые статусы:
+        refunded, returned, delivered, processing, pending, cancelled, shipped.
         """
 
         normalized_status = self.normalize_status(raw_status)
@@ -218,16 +219,17 @@ class OrderAnalyzer:
                 row_number=row_number,
             )
 
-        allowed_statuses = {self.delivered_status.lower(), "pending", "cancelled", "returned"}
+        allowed_statuses = {
+            "refunded",
+            "returned",
+            self.delivered_status.lower(),
+            "processing",
+            "pending",
+            "cancelled",
+            "shipped",
+        }
 
         if normalized_status not in allowed_statuses:
-            raise StatusValidationError(
-                code="ERR_STATUS_NOT_ALLOWED",
-                raw_value=raw_status,
-                row_number=row_number,
-            )
-
-        if normalized_status != self.delivered_status.lower():
             raise StatusValidationError(
                 code="ERR_STATUS_NOT_ALLOWED",
                 raw_value=raw_status,
