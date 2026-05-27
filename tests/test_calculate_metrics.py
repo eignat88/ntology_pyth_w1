@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.analyzer import AmountValidationError, OrderAnalyzer
+from src.analyzer import AmountValidationError, OrderAnalyzer, StatusValidationError
 
 
 class CalculateMetricsTests(unittest.TestCase):
@@ -29,8 +29,8 @@ class CalculateMetricsTests(unittest.TestCase):
     def test_calculate_metrics_normalizes_status_and_amount(self):
         df = pd.DataFrame(
             {
-                "status": [" Delivered ", "DELIVERED", "pending", ""],
-                "amount": ["10", "15.5", "8", "20"],
+                "status": [" Delivered ", "DELIVERED"],
+                "amount": ["10", "15.5"],
             }
         )
 
@@ -39,6 +39,36 @@ class CalculateMetricsTests(unittest.TestCase):
         self.assertEqual(metrics["orders_count"], 2)
         self.assertEqual(metrics["total_revenue"], 25.5)
         self.assertEqual(metrics["average_check"], 12.75)
+
+    def test_calculate_metrics_rejects_non_delivered_status_as_business_error(self):
+        df = pd.DataFrame(
+            {
+                "status": ["delivered", "pending"],
+                "amount": ["100", "50"],
+            }
+        )
+
+        with self.assertRaises(StatusValidationError) as error:
+            self.analyzer.calculate_metrics(df)
+
+        self.assertEqual(error.exception.code, "ERR_STATUS_NOT_ALLOWED")
+        self.assertEqual(error.exception.raw_value, "pending")
+        self.assertEqual(error.exception.row_number, 3)
+
+    def test_calculate_metrics_rejects_empty_status(self):
+        df = pd.DataFrame(
+            {
+                "status": ["delivered", "   "],
+                "amount": ["100", "50"],
+            }
+        )
+
+        with self.assertRaises(StatusValidationError) as error:
+            self.analyzer.calculate_metrics(df)
+
+        self.assertEqual(error.exception.code, "ERR_STATUS_EMPTY")
+        self.assertEqual(error.exception.raw_value, "   ")
+        self.assertEqual(error.exception.row_number, 3)
 
     def test_calculate_metrics_raises_for_dirty_amounts(self):
         df = pd.DataFrame(
