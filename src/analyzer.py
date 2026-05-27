@@ -1,5 +1,6 @@
 import logging
 import re
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -53,6 +54,8 @@ class OrderAnalyzer:
         status_column: str,
         delivered_status: str,
         amount_column: str,
+        max_amount: float,
+        amount_scale: int,
         required_columns: list[str],
     ):
         self.data_dir = Path(data_dir)
@@ -64,6 +67,8 @@ class OrderAnalyzer:
         self.status_column = status_column
         self.delivered_status = delivered_status
         self.amount_column = amount_column
+        self.max_amount = float(max_amount)
+        self.amount_scale = int(amount_scale)
         self.required_columns = required_columns
 
         self.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -162,7 +167,31 @@ class OrderAnalyzer:
                 row_number=row_number,
             )
 
-        return float(normalized_value)
+        amount = Decimal(normalized_value)
+
+        if amount <= 0:
+            raise AmountValidationError(
+                code="ERR_AMOUNT_NON_POSITIVE",
+                raw_value=raw_value,
+                row_number=row_number,
+            )
+
+        if amount > Decimal(str(self.max_amount)):
+            raise AmountValidationError(
+                code="ERR_AMOUNT_TOO_LARGE",
+                raw_value=raw_value,
+                row_number=row_number,
+            )
+
+        scale = -amount.as_tuple().exponent if amount.as_tuple().exponent < 0 else 0
+        if scale > self.amount_scale:
+            raise AmountValidationError(
+                code="ERR_AMOUNT_SCALE_EXCEEDED",
+                raw_value=raw_value,
+                row_number=row_number,
+            )
+
+        return float(amount)
 
     def normalize_status(self, raw_status: object) -> str:
         """Нормализует статус: trim + lower."""

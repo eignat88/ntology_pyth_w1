@@ -14,6 +14,8 @@ STATUS_COLUMN = "status"
 DELIVERED_STATUS = "Delivered"
 
 AMOUNT_COLUMN = "total_amount"
+MAX_AMOUNT = 1_000_000.00
+AMOUNT_SCALE = 2
 
 REQUIRED_COLUMNS = [
     "order_id",

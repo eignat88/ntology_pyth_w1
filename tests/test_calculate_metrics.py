@@ -20,6 +20,8 @@ class CalculateMetricsTests(unittest.TestCase):
             status_column="status",
             delivered_status="delivered",
             amount_column="amount",
+            max_amount=1_000_000.0,
+            amount_scale=2,
             required_columns=["status", "amount"],
         )
 
@@ -95,6 +97,22 @@ class CalculateMetricsTests(unittest.TestCase):
     def test_validate_total_amount_trims_and_accepts_decimal(self):
         value = self.analyzer.validate_total_amount(raw_value=" 123.45 ", row_number=5)
         self.assertEqual(value, 123.45)
+
+    def test_validate_total_amount_rejects_non_positive_values(self):
+        for raw in ["0", "0.00"]:
+            with self.assertRaises(AmountValidationError) as error:
+                self.analyzer.validate_total_amount(raw_value=raw, row_number=2)
+            self.assertEqual(error.exception.code, "ERR_AMOUNT_NON_POSITIVE")
+
+    def test_validate_total_amount_rejects_too_large_values(self):
+        with self.assertRaises(AmountValidationError) as error:
+            self.analyzer.validate_total_amount(raw_value="1000000.01", row_number=2)
+        self.assertEqual(error.exception.code, "ERR_AMOUNT_TOO_LARGE")
+
+    def test_validate_total_amount_rejects_scale_exceeded(self):
+        with self.assertRaises(AmountValidationError) as error:
+            self.analyzer.validate_total_amount(raw_value="12.345", row_number=2)
+        self.assertEqual(error.exception.code, "ERR_AMOUNT_SCALE_EXCEEDED")
 
 
 if __name__ == "__main__":

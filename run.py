@@ -7,6 +7,8 @@ from config import (
     STATUS_COLUMN,
     DELIVERED_STATUS,
     AMOUNT_COLUMN,
+    MAX_AMOUNT,
+    AMOUNT_SCALE,
     REQUIRED_COLUMNS,
 )
 from src.analyzer import OrderAnalyzer
@@ -22,6 +24,8 @@ def main() -> None:
         status_column=STATUS_COLUMN,
         delivered_status=DELIVERED_STATUS,
         amount_column=AMOUNT_COLUMN,
+        max_amount=MAX_AMOUNT,
+        amount_scale=AMOUNT_SCALE,
         required_columns=REQUIRED_COLUMNS,
     )
 
