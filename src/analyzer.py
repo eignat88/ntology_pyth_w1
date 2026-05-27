@@ -1,7 +1,20 @@
 import logging
+import re
 from pathlib import Path
 
 import pandas as pd
+
+
+class AmountValidationError(ValueError):
+    """Ошибка валидации значения суммы с кодом и контекстом строки."""
+
+    def __init__(self, code: str, raw_value: object, row_number: int):
+        self.code = code
+        self.raw_value = raw_value
+        self.row_number = row_number
+        super().__init__(
+            f"{code}: invalid total_amount at row {row_number}, raw_value={raw_value!r}"
+        )
 
 
 class OrderAnalyzer:
@@ -104,15 +117,40 @@ class OrderAnalyzer:
 
         df = df.copy()
 
-        if df[self.amount_column].isna().any():
-            raise ValueError(f"Колонка {self.amount_column} содержит пустые значения")
-
-        df[self.amount_column] = pd.to_numeric(df[self.amount_column], errors="raise")
-
-        if df[self.amount_column].isna().any():
-            raise ValueError(f"Колонка {self.amount_column} содержит некорректные значения")
+        df[self.amount_column] = [
+            self.validate_total_amount(raw_value=value, row_number=index + 2)
+            for index, value in enumerate(df[self.amount_column].tolist())
+        ]
 
         return df
+
+    def validate_total_amount(self, raw_value: object, row_number: int) -> float:
+        """
+        Валидирует total_amount и возвращает число.
+
+        Правила:
+        - trim + нормализация строки до проверки;
+        - ошибками считаются пустое значение, NaN/NULL/INF/-INF (любой регистр);
+        - допускается только десятичный формат: ^\\d+(\\.\\d+)?$.
+        """
+
+        raw_as_string = "" if raw_value is None else str(raw_value)
+        normalized_value = raw_as_string.strip()
+        normalized_upper = normalized_value.upper()
+
+        invalid_tokens = {"", "NAN", "NULL", "INF", "-INF"}
+        decimal_pattern = r"^\d+(\.\d+)?$"
+
+        if normalized_upper in invalid_tokens or not re.fullmatch(
+            decimal_pattern, normalized_value
+        ):
+            raise AmountValidationError(
+                code="ERR_AMOUNT_FORMAT",
+                raw_value=raw_value,
+                row_number=row_number,
+            )
+
+        return float(normalized_value)
 
     def filter_delivered_orders(self, df: pd.DataFrame) -> pd.DataFrame:
         """

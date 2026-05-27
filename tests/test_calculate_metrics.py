@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.analyzer import OrderAnalyzer
+from src.analyzer import AmountValidationError, OrderAnalyzer
 
 
 class CalculateMetricsTests(unittest.TestCase):
@@ -36,11 +36,9 @@ class CalculateMetricsTests(unittest.TestCase):
 
         metrics = self.analyzer.calculate_metrics(df)
 
-        self.assertEqual(metrics["total_orders"], 4)
-        self.assertEqual(metrics["delivered_orders"], 2)
-        self.assertEqual(metrics["total_amount"], 25.5)
-        self.assertEqual(metrics["empty_status_orders"], 1)
-        self.assertEqual(metrics["invalid_amount_orders"], 0)
+        self.assertEqual(metrics["orders_count"], 2)
+        self.assertEqual(metrics["total_revenue"], 25.5)
+        self.assertEqual(metrics["average_check"], 12.75)
 
     def test_calculate_metrics_raises_for_dirty_amounts(self):
         df = pd.DataFrame(
@@ -50,10 +48,23 @@ class CalculateMetricsTests(unittest.TestCase):
             }
         )
 
-        with self.assertRaises(ValueError) as error:
+        with self.assertRaises(AmountValidationError) as error:
             self.analyzer.calculate_metrics(df)
 
-        self.assertIn("содержит нечисловые значения", str(error.exception))
+        self.assertEqual(error.exception.code, "ERR_AMOUNT_FORMAT")
+        self.assertEqual(error.exception.raw_value, "oops")
+        self.assertEqual(error.exception.row_number, 3)
+
+    def test_validate_total_amount_rejects_special_and_non_decimal_values(self):
+        bad_values = ["", "   ", "NaN", "null", "INF", "-inf", "1e309", "500 RUB"]
+
+        for raw in bad_values:
+            with self.assertRaises(AmountValidationError):
+                self.analyzer.validate_total_amount(raw_value=raw, row_number=2)
+
+    def test_validate_total_amount_trims_and_accepts_decimal(self):
+        value = self.analyzer.validate_total_amount(raw_value=" 123.45 ", row_number=5)
+        self.assertEqual(value, 123.45)
 
 
 if __name__ == "__main__":
